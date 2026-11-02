@@ -106,6 +106,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:18p
 canvas{display:block;width:100%;border-radius:10px}
 .sliders{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:13px;color:var(--mut);margin:10px 0}
 input[type=range]{width:100%;accent-color:var(--gold)}
+.live{color:#ff5c60;font-size:12px;letter-spacing:.1em;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+.btn:disabled{opacity:.4}
 .status{font-size:14px;color:var(--mut);margin:10px 0;min-height:20px}
 .bar{height:4px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
 .bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .3s}
@@ -207,18 +210,26 @@ nav button.on{color:var(--gold);background:rgba(231,180,80,.12)}
 
 <!-- KÉP -->
 <div class="view" id="v-ocr">
+  <div class="card" id="monCard">
+    <h2>Képernyő figyelése <span class="live" id="liveDot" hidden>● ÉLŐ</span></h2>
+    <p class="mut" style="font-size:14px;margin:0 0 12px;line-height:1.45">Gépen (Chrome / Edge): oszd meg a játék fülét vagy ablakát, és jelöld ki egérrel a számsort. A program figyeli, és az új számokat magától rögzíti. Csak a képet látja, az oldalhoz nem nyúl.</p>
+    <div class="actions"><button class="btn gold" id="monStart">▶ Figyelés indítása</button><button class="btn" id="monStop" disabled>■ Leállítás</button></div>
+    <div class="status" id="monst"></div>
+  </div>
   <div class="card">
     <h2>Képernyőkép beolvasása</h2>
-    <label class="drop"><input type="file" id="shot" accept="image/*"><span class="ic">📷</span><b>Válassz képernyőképet</b><span class="mut" style="font-size:13px">A felső számsort olvasom ki (legújabb balra)</span></label>
-    <div id="ocrbox" hidden>
-      <canvas id="prev" style="margin-top:12px;background:#000"></canvas>
-      <div class="sliders"><span>Sáv helye</span><input type="range" id="top" min="0" max="40" step="0.1" value="7"><span>Magasság</span><input type="range" id="hgt" min="1" max="8" step="0.1" value="2.1"></div>
-      <canvas id="crop" style="background:#fff"></canvas>
-      <div class="status" id="ocrst"></div>
-      <div class="bar"><i id="ocrbar"></i></div>
-      <input class="field" id="ocrtxt" placeholder="pl. 36 11 36 29 24" style="width:100%;margin-top:10px">
-      <div class="actions"><button class="btn" id="read">↻ Újraolvasás</button><button class="btn gold" id="ocradd">Hozzáadás</button></div>
-    </div>
+    <label class="drop"><input type="file" id="shot" accept="image/*"><span class="ic">📷</span><b>Válassz képernyőképet</b><span class="mut" style="font-size:13px">vagy gépen illeszd be: Ctrl+V</span></label>
+  </div>
+  <div class="card" id="ocrbox" hidden>
+    <h2>Számsor helye</h2>
+    <p class="mut" style="font-size:13px;margin:0 0 8px">Húzd ki egérrel / ujjal a keretet a számsor köré (legújabb szám balra). Telefonos képnél a csúszkák is jók.</p>
+    <canvas id="prev" style="background:#000;touch-action:none;cursor:crosshair"></canvas>
+    <div class="sliders"><span>Sáv helye</span><input type="range" id="top" min="0" max="40" step="0.1" value="7"><span>Magasság</span><input type="range" id="hgt" min="1" max="8" step="0.1" value="2.1"></div>
+    <canvas id="crop" style="background:#fff"></canvas>
+    <div class="status" id="ocrst"></div>
+    <div class="bar"><i id="ocrbar"></i></div>
+    <input class="field" id="ocrtxt" placeholder="pl. 36 11 36 29 24" style="width:100%;margin-top:10px">
+    <div class="actions"><button class="btn" id="read">↻ Újraolvasás</button><button class="btn gold" id="ocradd">Hozzáadás</button></div>
   </div>
 </div>
 
@@ -344,19 +355,34 @@ function render(added){
 render(0);
 
 // ---- Képernyőkép beolvasás (OCR) ----
-let img=null,worker=null,tokens=[];
-$('shot').onchange=e=>{const f=e.target.files[0];if(!f)return;const u=URL.createObjectURL(f);img=new Image();img.onload=()=>{$('ocrbox').hidden=false;drawPrev();read()};img.src=u};
-$('top').oninput=$('hgt').oninput=drawPrev;
-function band(){const t=+$('top').value/100,hh=+$('hgt').value/100;return{y:Math.round(img.height*t),h:Math.max(4,Math.round(img.height*hh))}}
-function drawPrev(){
-  const c=$('prev'),W=img.width,H=Math.round(img.height*0.45);c.width=W;c.height=H;const x=c.getContext('2d');
-  x.drawImage(img,0,0,W,H,0,0,W,H);const b=band();x.strokeStyle='#e7b450';x.lineWidth=Math.max(3,W/200);x.strokeRect(2,b.y,W-4,b.h);
-  binarize();
+let img=null,worker=null,tokens=[],sel=null;
+try{sel=JSON.parse(localStorage.getItem('rt_rect'))}catch(e){}
+function loadFile(f){if(!f)return;stopMon();const u=URL.createObjectURL(f);const im=new Image();im.onload=()=>{img=im;$('ocrbox').hidden=false;drawPrev();read()};im.src=u}
+$('shot').onchange=e=>loadFile(e.target.files[0]);
+// Ctrl+V: kivágott képernyőkép beillesztése
+document.addEventListener('paste',e=>{const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(!it)return;
+  e.preventDefault();document.querySelector('#nav [data-v="ocr"]').click();loadFile(it.getAsFile());toast('Kép beillesztve')});
+$('top').oninput=$('hgt').oninput=()=>{sel=null;try{localStorage.removeItem('rt_rect')}catch(e){}drawPrev()};
+function band(){
+  if(sel)return{x:Math.round(img.width*sel.x),y:Math.round(img.height*sel.y),w:Math.max(8,Math.round(img.width*sel.w)),h:Math.max(4,Math.round(img.height*sel.h))};
+  const t=+$('top').value/100,hh=+$('hgt').value/100;return{x:0,w:img.width,y:Math.round(img.height*t),h:Math.max(4,Math.round(img.height*hh))}}
+// keret kijelölése húzással az előnézeten
+(function(){const c=$('prev');let st=null;
+  const pos=e=>{const r=c.getBoundingClientRect();return[Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))]};
+  c.onpointerdown=e=>{if(!img)return;c.setPointerCapture(e.pointerId);st=pos(e)};
+  c.onpointermove=e=>{if(!st)return;const q=pos(e);const H=c.height/img.height;
+    sel={x:Math.min(st[0],q[0]),w:Math.abs(q[0]-st[0]),y:Math.min(st[1],q[1])*H,h:Math.abs(q[1]-st[1])*H};drawPrev(true)};
+  c.onpointerup=()=>{if(!st)return;st=null;if(sel&&(sel.w<0.02||sel.h<0.003)){sel=null}
+    try{sel?localStorage.setItem('rt_rect',JSON.stringify(sel)):0}catch(e){}drawPrev();if(!mon)read();else monLast=null}})();
+function drawPrev(light){
+  const c=$('prev'),W=img.width,H=Math.round(img.height*(img.height>img.width*1.3?0.45:1));c.width=W;c.height=H;const x=c.getContext('2d');
+  x.drawImage(img,0,0,W,H,0,0,W,H);const b=band();x.strokeStyle='#e7b450';x.lineWidth=Math.max(3,W/200);x.strokeRect(b.x+1,b.y,b.w-2,b.h);
+  if(!light)binarize();
 }
 // Szövegpixelek: fehér, vagy piros szöveg sötét háttéren. A piros/arany hátterű cellákban csak a fehér számít.
 function binarize(){
-  const b=band(),W=img.width,S=Math.max(1,Math.round(90/b.h));
-  const t=document.createElement('canvas');t.width=W;t.height=b.h;const tx=t.getContext('2d');tx.drawImage(img,0,b.y,W,b.h,0,0,W,b.h);
+  const b=band(),W=b.w,S=Math.max(1,Math.round(90/b.h));
+  const t=document.createElement('canvas');t.width=W;t.height=b.h;const tx=t.getContext('2d');tx.drawImage(img,b.x,b.y,W,b.h,0,0,W,b.h);
   const d=tx.getImageData(0,0,W,b.h),p=d.data;
   const isRed=i=>p[i]>70&&p[i]>1.7*p[i+1]&&p[i]>1.7*p[i+2];
   const isRedSoft=i=>p[i]>55&&p[i]>1.35*p[i+1]&&p[i]>1.35*p[i+2]; // élsimított széleket is
@@ -402,22 +428,27 @@ function binarize(){
   const c=$('crop');c.width=W*S;c.height=b.h*S;const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);
   cx.imageSmoothingEnabled=true;cx.drawImage(t,0,0,c.width,c.height);
 }
+async function ensureWorker(){if(!window.Tesseract)throw new Error('A szövegfelismerő nem töltődött be (nincs internet?)');
+  if(!worker){worker=await Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'0123456789'})}}
+// a kijelölt sáv első `limit` számának kiolvasása; bizonytalan szám: '?'
+async function ocrNums(limit,progress){
+  await ensureWorker();
+  const ocr=async(c,psm)=>{await worker.setParameters({tessedit_pageseg_mode:psm});return ((await worker.recognize(c)).data.text.match(/\d+/g)||[]).join('')};
+  const list=tokens.slice(0,limit||tokens.length),nums=[];let k=0;
+  for(const tk of list){progress&&progress(++k,list.length);
+    // a számjegyek száma ismert (képből), így azt a felismerést fogadjuk el, amelyik ennyi jegyből áll
+    let v=null;for(const psm of ['7','8','13']){const r=await ocr(tk.img,psm);if(r.length===tk.n){v=r;break}}
+    if(v===null){v='';for(const d of tk.digits){const r=await ocr(d,'10');v+=r.length===1?r:'?'}}
+    nums.push(/^\d+$/.test(v)&&+v<=36?+v:'?'+v.replace(/\?/g,''))}
+  return nums;
+}
 async function read(){
-  if(!window.Tesseract){$('ocrst').textContent='A szövegfelismerő nem töltődött be (nincs internet?). Írd be kézzel a számokat.';return}
-  $('ocrst').textContent='Kiolvasás folyamatban…';
+  $('ocrst').textContent='Kiolvasás folyamatban…';$('ocrbar').style.width='0';
   try{
-    if(!worker){worker=await Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'0123456789'})}
-    const ocr=async(c,psm)=>{await worker.setParameters({tessedit_pageseg_mode:psm});return ((await worker.recognize(c)).data.text.match(/\d+/g)||[]).join('')};
-    const nums=[];let k=0;
-    $('ocrbar').style.width='0';
-    for(const tk of tokens){$('ocrst').textContent=`Kiolvasás… ${++k}/${tokens.length}`;$('ocrbar').style.width=(100*k/tokens.length)+'%';
-      // a számjegyek száma ismert (képből), így azt a felismerést fogadjuk el, amelyik ennyi jegyből áll
-      let v=null;for(const psm of ['7','8','13']){const r=await ocr(tk.img,psm);if(r.length===tk.n){v=r;break}}
-      if(v===null){v='';for(const d of tk.digits){const r=await ocr(d,'10');v+=r.length===1?r:'?'}}
-      nums.push(/^\d+$/.test(v)&&+v<=36?+v:'?'+v.replace(/\?/g,''))}
+    const nums=await ocrNums(0,(k,n)=>{$('ocrst').textContent=`Kiolvasás… ${k}/${n}`;$('ocrbar').style.width=(100*k/n)+'%'});
     $('ocrtxt').value=nums.join(' ');
     const bad=nums.filter(n=>typeof n!=='number').length;
-    $('ocrst').textContent=nums.length?`${nums.length} számot olvastam ki${bad?` (${bad} bizonytalan, „?”-lel jelölve – javítsd)`:''} – vesd össze a képpel, és javítsd, ha kell.`:'Nem találtam számot – állítsd az arany keretet a számsorra, majd „Kiolvasás”.';
+    $('ocrst').textContent=nums.length?`${nums.length} számot olvastam ki${bad?` (${bad} bizonytalan, „?”-lel jelölve – javítsd)`:''} – vesd össze a képpel, és javítsd, ha kell.`:'Nem találtam számot – húzd a keretet a számsor köré.';
   }catch(err){$('ocrst').textContent='Hiba a kiolvasásnál: '+err.message}
 }
 $('read').onclick=read;
@@ -437,6 +468,53 @@ $('ocradd').onclick=()=>{
   add(nw,nw.length+' új szám hozzáadva');$('ocrst').textContent=nw.length+' új szám hozzáadva: '+nw.join(', ');
 };
 
+
+// ---- Élő képernyő-figyelés (gépen) ----
+let mon=null,monLast=null,monBusy=false,monFirst=true,monPend=null;
+const vid=document.createElement('video');vid.muted=true;vid.playsInline=true;
+const frame=document.createElement('canvas');
+function sig(){ // kis felbontású ujjlenyomat a kijelölt sávról – ebből látszik, változott-e
+  const b=band(),c=document.createElement('canvas');c.width=96;c.height=8;const x=c.getContext('2d');x.drawImage(img,b.x,b.y,b.w,b.h,0,0,96,8);
+  const d=x.getImageData(0,0,96,8).data,o=new Uint8Array(768);for(let i=0;i<768;i++)o[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;return o}
+const diff=(a,b)=>{if(!a||!b)return 255;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/a.length};
+async function startMon(){
+  if(!navigator.mediaDevices?.getDisplayMedia){$('monst').textContent='Ez a böngésző nem támogatja a képernyő megosztását. Gépen Chrome-ot vagy Edge-et használj; telefonon a képernyőkép-beolvasás működik.';return}
+  try{mon=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:4},audio:false})}catch(e){$('monst').textContent='A megosztás megszakítva.';return}
+  vid.srcObject=mon;await vid.play();mon.getVideoTracks()[0].onended=stopMon;
+  monFirst=true;monLast=null;monPend=null;img=frame;
+  $('monStart').disabled=true;$('monStop').disabled=false;$('liveDot').hidden=false;$('ocrbox').hidden=false;
+  $('monst').textContent=sel?'Figyelés fut. Ha a keret nem a számsoron van, húzd át lent.':'Húzd ki a keretet lent a számsor köré – utána indul a figyelés.';
+  toast('Figyelés elindult');tick();
+}
+function stopMon(){if(!mon)return;mon.getTracks().forEach(t=>t.stop());mon=null;
+  $('monStart').disabled=false;$('monStop').disabled=true;$('liveDot').hidden=true;$('monst').textContent='Figyelés leállítva.'}
+async function tick(){
+  if(!mon)return;
+  if(!monBusy&&vid.videoWidth){
+    frame.width=vid.videoWidth;frame.height=vid.videoHeight;frame.getContext('2d').drawImage(vid,0,0);
+    if(document.querySelector('#v-ocr.on'))drawPrev(true);
+    if(sel){const sg=sig();
+      // csak akkor olvas, ha a sáv megváltozott, és két egymás utáni képkockán már nyugton van (animáció vége)
+      if(diff(sg,monLast)>6){if(monPend&&diff(sg,monPend)<3){monBusy=true;await monRead();monLast=sg;monPend=null;monBusy=false}else monPend=sg}
+    }
+  }
+  setTimeout(tick,1200);
+}
+async function monRead(){
+  try{binarize();
+    const nums=await ocrNums(monFirst?0:6);
+    // a bizonytalan számig tartó eleje is elég (élő videónál a tömörítés néha elmos egy-egy számot)
+    const ok=[];for(const n of nums){if(typeof n!=='number')break;ok.push(n)}
+    if(ok.length<Math.min(3,nums.length)){$('monst').textContent='Bizonytalan kiolvasás ('+nums.join(' ')+') – újrapróbálom.';monLast=null;return}
+    let nw=merge(ok);
+    if(nw===null){if(monFirst){nw=ok}else{$('monst').textContent='A kiolvasott sor ('+ok.join(' ')+') nem illeszkedik az előzményekhez – ellenőrizd a keretet.';return}}
+    if(monFirst&&nw===ok&&h.length)toast('Új sorozat kezdve a képernyőről');
+    monFirst=false;
+    if(nw.length){add(nw,nw.length===1?`Új szám: ${nw[0]} · ${NAME[side(nw[0])]}`:`${nw.length} új szám`)}
+    $('monst').textContent=`Figyelés fut · utolsó olvasás: ${nums.slice(0,6).join(' ')} · ${new Date().toLocaleTimeString('hu-HU')}`;
+  }catch(err){$('monst').textContent='Hiba: '+err.message}
+}
+$('monStart').onclick=startMon;$('monStop').onclick=stopMon;
 </script>
 </body>
 </html>
