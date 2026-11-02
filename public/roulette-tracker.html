@@ -15,6 +15,7 @@ h1{font-size:20px;margin:0 0 12px}.card{background:var(--card);border-radius:10p
 .bar{height:22px;display:flex;border-radius:4px;overflow:hidden;margin:6px 0}.bar div{display:flex;align-items:center;justify-content:center;font-size:12px}
 .warn{border-left:4px solid var(--acc)}small,.mut{color:var(--mut)}table{width:100%;border-collapse:collapse}td{padding:3px 0}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 </head>
 <body>
 <h1>🎡 Rulett Figyelő – 1-18 / 19-36</h1>
@@ -22,6 +23,19 @@ h1{font-size:20px;margin:0 0 12px}.card{background:var(--card);border-radius:10p
 <div class="card"><b>Kipörgetett szám bevitele</b>
 <div class="grid" id="pad"></div>
 <div class="row" style="margin-top:8px"><button id="undo">↶ Visszavon</button><button id="clear">Törlés</button></div></div>
+
+<div class="card"><b>📷 Képernyőkép beolvasása</b>
+<p class="mut" style="margin:6px 0">Készíts képernyőképet a játékról, és válaszd ki. A program kiolvassa a felső számsort (legújabb balra). Ellenőrizd a kiolvasott számokat, mielőtt hozzáadod őket.</p>
+<input type="file" id="shot" accept="image/*" style="width:100%">
+<div id="ocrbox" hidden>
+<canvas id="prev" style="width:100%;margin-top:8px;border-radius:6px;background:#000"></canvas>
+<div class="row" style="margin-top:6px;align-items:center"><small style="flex:0 0 auto">Sáv helye</small><input type="range" id="top" min="0" max="40" step="0.1" value="7" style="flex:3"><small style="flex:0 0 auto">magasság</small><input type="range" id="hgt" min="1" max="8" step="0.1" value="2.1" style="flex:2"></div>
+<canvas id="crop" style="width:100%;margin-top:6px;border-radius:6px;background:#fff"></canvas>
+<div class="row" style="margin-top:6px"><button id="read">Kiolvasás</button></div>
+<p class="mut" id="ocrst" style="margin:6px 0"></p>
+<input id="ocrtxt" placeholder="pl. 36 11 36 29 24" style="width:100%;padding:8px;border-radius:6px;border:0;font-size:16px">
+<div class="row" style="margin-top:6px"><button id="ocradd" style="background:#2e7d32">Hozzáadás az előzményekhez</button></div>
+</div></div>
 
 <div class="card"><b>Előzmények</b> <small>(legújabb balra)</small><div class="hist" id="hist" style="margin-top:6px"></div></div>
 
@@ -89,6 +103,100 @@ function render(){
    </table>`;
 }
 render();
+
+// ---- Képernyőkép beolvasás (OCR) ----
+const $=id=>document.getElementById(id);
+let img=null,worker=null,tokens=[];
+$('shot').onchange=e=>{const f=e.target.files[0];if(!f)return;const u=URL.createObjectURL(f);img=new Image();img.onload=()=>{$('ocrbox').hidden=false;drawPrev();read()};img.src=u};
+$('top').oninput=$('hgt').oninput=drawPrev;
+function band(){const t=+$('top').value/100,hh=+$('hgt').value/100;return{y:Math.round(img.height*t),h:Math.max(4,Math.round(img.height*hh))}}
+function drawPrev(){
+  const c=$('prev'),W=img.width,H=Math.round(img.height*0.45);c.width=W;c.height=H;const x=c.getContext('2d');
+  x.drawImage(img,0,0,W,H,0,0,W,H);const b=band();x.strokeStyle='#0f0';x.lineWidth=Math.max(3,W/200);x.strokeRect(2,b.y,W-4,b.h);
+  binarize();
+}
+// Szövegpixelek: fehér, vagy piros szöveg sötét háttéren. A piros/arany hátterű cellákban csak a fehér számít.
+function binarize(){
+  const b=band(),W=img.width,S=Math.max(1,Math.round(90/b.h));
+  const t=document.createElement('canvas');t.width=W;t.height=b.h;const tx=t.getContext('2d');tx.drawImage(img,0,b.y,W,b.h,0,0,W,b.h);
+  const d=tx.getImageData(0,0,W,b.h),p=d.data;
+  const isRed=i=>p[i]>70&&p[i]>1.7*p[i+1]&&p[i]>1.7*p[i+2];
+  const isRedSoft=i=>p[i]>55&&p[i]>1.35*p[i+1]&&p[i]>1.35*p[i+2]; // élsimított széleket is
+  const colRed=new Float32Array(W);
+  for(let x=0;x<W;x++){let n=0;for(let y=0;y<b.h;y++)if(isRed((y*W+x)*4))n++;colRed[x]=n/b.h}
+  const out=tx.createImageData(W,b.h),o=out.data;
+  for(let y=0;y<b.h;y++)for(let x=0;x<W;x++){const i=(y*W+x)*4;
+    const mx=Math.max(p[i],p[i+1],p[i+2]),mn=Math.min(p[i],p[i+1],p[i+2]);
+    const white=mx>105&&mx-mn<55; // halvány/áttetsző fehér számok is
+    const redTxt=isRedSoft(i)&&colRed[x]<0.45;
+    const v=(white||redTxt)?0:255;o[i]=o[i+1]=o[i+2]=v;o[i+3]=255}
+  // cellaelválasztó függőleges vonalak törlése (szinte teljes magasságú oszlopok)
+  const cn=new Int32Array(W);for(let x=0;x<W;x++)for(let y=0;y<b.h;y++)if(!o[(y*W+x)*4])cn[x]++;
+  for(let x=0;x<W;x++)if(cn[x]>0.7*b.h&&(cn[x-4]||0)<0.5*b.h&&(cn[x+4]||0)<0.5*b.h)
+    for(let y=0;y<b.h;y++){const i=(y*W+x)*4;o[i]=o[i+1]=o[i+2]=255}
+  // vízszintes keretvonalak törlése
+  for(let y=0;y<b.h;y++){let n=0;for(let x=0;x<W;x++)if(!o[(y*W+x)*4])n++;
+    if(n>0.08*W){let run=0,lr=0;for(let x=0;x<W;x++){run=o[(y*W+x)*4]?0:run+1;lr=Math.max(lr,run)}
+      if(lr>0.06*W)for(let x=0;x<W;x++){const i=(y*W+x)*4;o[i]=o[i+1]=o[i+2]=255}}}
+  tx.putImageData(out,0,0);
+  // fő szövegsáv (sorprofil) és számok szétválasztása (oszlopprofil)
+  const blk=(x,y)=>!o[(y*W+x)*4],rc=new Int32Array(b.h);
+  for(let y=0;y<b.h;y++)for(let x=0;x<W;x++)if(blk(x,y))rc[y]++;
+  const rmax=Math.max(...rc);let y0=rc.indexOf(rmax),y1=y0;
+  while(y0>0&&rc[y0-1]>0.12*rmax)y0--;while(y1<b.h-1&&rc[y1+1]>0.12*rmax)y1++;
+  const th=y1-y0+1,col=x=>{for(let y=y0;y<=y1;y++)if(blk(x,y))return true;return false};
+  const runs=[];let st=-1;for(let x=0;x<=W;x++){const on=x<W&&col(x);if(on&&st<0)st=x;if(!on&&st>=0){runs.push([st,x]);st=-1}}
+  // töredékek (élsimítás miatt szétesett számjegy-darabok) hozzáolvasztása a szomszédhoz
+  let rs=runs.map(r=>[...r]);
+  for(let changed=true;changed;){changed=false;
+    for(let i=0;i<rs.length;i++){const w=rs[i][1]-rs[i][0];if(w>=th*0.3)continue;
+      const gl=i>0?rs[i][0]-rs[i-1][1]:1e9,gr=i<rs.length-1?rs[i+1][0]-rs[i][1]:1e9;
+      if(Math.min(gl,gr)>th*0.2)continue;
+      if(gl<=gr){rs[i-1][1]=rs[i][1];rs.splice(i,1)}else{rs[i+1][0]=rs[i][0];rs.splice(i,1)}changed=true;break}}
+  const ext=([a,z])=>{let t1=y1,b1=y0;for(let x=a;x<z;x++)for(let y=y0;y<=y1;y++)if(blk(x,y)){t1=Math.min(t1,y);b1=Math.max(b1,y)}return b1-t1+1};
+  const digs=rs.filter(r=>ext(r)>=th*0.5);
+  const mk=(a,z)=>{const pad=Math.round(th*0.5),sc=Math.max(1,48/th),c=document.createElement('canvas');
+    c.width=Math.round((z-a+2*pad)*sc);c.height=Math.round((th+2*pad)*sc);const cx=c.getContext('2d');
+    cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);cx.drawImage(t,a,y0,z-a,th,pad*sc,pad*sc,(z-a)*sc,th*sc);return c};
+  // számjegyek csoportosítása számokká (kis rés = ugyanaz a szám)
+  const grp=[];for(const r of digs){const L=grp[grp.length-1];if(L&&r[0]-L.d[L.d.length-1][1]<th*0.3)L.d.push(r);else grp.push({d:[r]})}
+  tokens=grp.map(g=>({n:g.d.length,img:mk(g.d[0][0],g.d[g.d.length-1][1]),digits:g.d.map(r=>mk(r[0],r[1]))}));
+  const c=$('crop');c.width=W*S;c.height=b.h*S;const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);
+  cx.imageSmoothingEnabled=true;cx.drawImage(t,0,0,c.width,c.height);
+}
+async function read(){
+  if(!window.Tesseract){$('ocrst').textContent='A szövegfelismerő nem töltődött be (nincs internet?). Írd be kézzel a számokat.';return}
+  $('ocrst').textContent='Kiolvasás folyamatban…';
+  try{
+    if(!worker){worker=await Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'0123456789'})}
+    const ocr=async(c,psm)=>{await worker.setParameters({tessedit_pageseg_mode:psm});return ((await worker.recognize(c)).data.text.match(/\d+/g)||[]).join('')};
+    const nums=[];let k=0;
+    for(const tk of tokens){$('ocrst').textContent=`Kiolvasás… ${++k}/${tokens.length}`;
+      // a számjegyek száma ismert (képből), így azt a felismerést fogadjuk el, amelyik ennyi jegyből áll
+      let v=null;for(const psm of ['7','8','13']){const r=await ocr(tk.img,psm);if(r.length===tk.n){v=r;break}}
+      if(v===null){v='';for(const d of tk.digits){const r=await ocr(d,'10');v+=r.length===1?r:'?'}}
+      nums.push(/^\d+$/.test(v)&&+v<=36?+v:'?'+v.replace(/\?/g,''))}
+    $('ocrtxt').value=nums.join(' ');
+    const bad=nums.filter(n=>typeof n!=='number').length;
+    $('ocrst').textContent=nums.length?`${nums.length} számot olvastam ki${bad?` (${bad} bizonytalan, „?”-lel jelölve – javítsd)`:''} – vesd össze a képpel, és javítsd, ha kell.`:'Nem találtam számot – állítsd a zöld keretet a számsorra, majd „Kiolvasás”.';
+  }catch(err){$('ocrst').textContent='Hiba a kiolvasásnál: '+err.message}
+}
+$('read').onclick=read;
+// Csak az új számokat adja hozzá: megkeresi, hol fedi át a kép a már rögzített előzményeket.
+function merge(seq){
+  if(!h.length)return seq;
+  for(let k=0;k<seq.length;k++){const rest=seq.slice(k),m=Math.min(rest.length,h.length);
+    if(m>=Math.min(3,rest.length)&&rest.slice(0,m).every((n,i)=>n===h[i]))return seq.slice(0,k)}
+  return null;
+}
+$('ocradd').onclick=()=>{
+  if(/\?/.test($('ocrtxt').value)){$('ocrst').textContent='Előbb javítsd a „?”-lel jelölt számokat.';return}
+  const seq=($('ocrtxt').value.match(/\d+/g)||[]).map(Number).filter(n=>n<=36);if(!seq.length)return;
+  let add=merge(seq);
+  if(add===null){if(!confirm('A kép számsora nem kapcsolódik a mostani előzményekhez. Mind a '+seq.length+' számot hozzáadjam?'))return;add=seq}
+  if(!add.length){$('ocrst').textContent='Nincs új szám – ezek már mind benne vannak.';return}
+  h=add.concat(h);save();render();$('ocrst').textContent=add.length+' új szám hozzáadva: '+add.join(', ');
+};
 </script>
 </body>
 </html>
