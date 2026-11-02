@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>Pörgés Napló</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" defer></script>
+<style>
+:root{
+  --bg:#0b0d12;--bg2:#121621;--glass:rgba(255,255,255,.055);--line:rgba(255,255,255,.09);
+  --fg:#eef1f7;--mut:#8a93a6;--gold:#e7b450;--red:#e5383b;--blk:#2a2f3c;--grn:#1f9d55;
+  --lo:#2ec4b6;--hi:#9b5de5;--r:18px;--ease:cubic-bezier(.2,.9,.25,1.15)
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:'Space Grotesk',system-ui,sans-serif}
+body{min-height:100vh;padding:0 16px calc(96px + env(safe-area-inset-bottom));max-width:560px;margin:auto;
+  background:radial-gradient(600px 380px at 50% -80px,rgba(231,180,80,.16),transparent 70%),var(--bg);overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+.mut{color:var(--mut)}
+
+/* ---------- fejléc + kerék ---------- */
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 2px 6px}
+.brand{font-weight:700;letter-spacing:.14em;font-size:13px;text-transform:uppercase}
+.brand b{color:var(--gold)}
+.count{font-size:12px;color:var(--mut);padding:6px 10px;border:1px solid var(--line);border-radius:99px}
+.hero{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;margin:8px 0 18px}
+.wheelWrap{position:relative;width:150px;height:150px}
+.wheelWrap::before{content:"";position:absolute;inset:-10px;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent,rgba(231,180,80,.35),transparent 30%);filter:blur(14px);opacity:.6;animation:halo 8s linear infinite}
+@keyframes halo{to{transform:rotate(360deg)}}
+#wheel{position:relative;width:100%;height:100%;transition:transform 2.6s cubic-bezier(.12,.75,.15,1)}
+.pointer{position:absolute;left:50%;top:-6px;transform:translateX(-50%);width:0;height:0;
+  border-left:8px solid transparent;border-right:8px solid transparent;border-top:14px solid var(--gold);filter:drop-shadow(0 2px 4px #000);z-index:2}
+.last{min-width:0}
+.lastLbl{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.12em}
+.lastNum{font-size:76px;font-weight:700;line-height:1;margin:4px 0 8px;display:inline-block}
+.lastNum.pop{animation:pop .6s var(--ease)}
+@keyframes pop{0%{transform:scale(.4);opacity:0;filter:blur(6px)}100%{transform:none;opacity:1;filter:none}}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:12px;padding:5px 10px;border-radius:99px;background:var(--glass);border:1px solid var(--line)}
+.tag.lo{color:var(--lo);border-color:rgba(46,196,182,.35)}.tag.hi{color:var(--hi);border-color:rgba(155,93,229,.4)}
+.tag.z{color:#5fdc96;border-color:rgba(31,157,85,.5)}
+
+/* ---------- kártyák ---------- */
+.card{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));border:1px solid var(--line);
+  border-radius:var(--r);padding:16px;margin-bottom:14px;backdrop-filter:blur(10px)}
+.card h2{font-size:13px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
+.view{display:none}.view.on{display:block;animation:fadeUp .35s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* ---------- számbillentyűzet ---------- */
+.pad{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.k{position:relative;overflow:hidden;border:0;border-radius:12px;padding:13px 0;font-size:18px;font-weight:700;
+  transition:transform .12s ease,box-shadow .2s;box-shadow:inset 0 -3px 0 rgba(0,0,0,.25)}
+.k:active{transform:scale(.92)}
+.k.r{background:linear-gradient(160deg,#ff5457,#c4252a)}.k.b{background:linear-gradient(160deg,#3a4050,#1f232d)}
+.k.z{background:linear-gradient(160deg,#2cc36e,#167a41);grid-column:span 6}
+.k .rip{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:rip .55s ease-out;pointer-events:none}
+@keyframes rip{to{transform:scale(4);opacity:0}}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.btn{border:1px solid var(--line);background:var(--glass);border-radius:12px;padding:11px;font-size:14px;transition:background .2s,transform .12s}
+.btn:active{transform:scale(.96)}.btn.gold{background:var(--gold);color:#1a1405;border:0;font-weight:700}
+.btn.ghost{background:transparent}
+.multi{display:flex;gap:8px;margin-top:10px}
+.multi input,.field{flex:1;min-width:0;background:rgba(0,0,0,.3);border:1px solid var(--line);color:var(--fg);border-radius:12px;padding:11px 12px;font:inherit;font-size:16px}
+
+/* ---------- előzmény-szalag ---------- */
+.strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:15px;border:2px solid transparent}
+.chip.r{background:var(--red)}.chip.b{background:var(--blk)}.chip.z{background:var(--grn)}
+.chip.new{animation:slideIn .5s var(--ease)}
+.chip:first-child{border-color:var(--gold);box-shadow:0 0 14px rgba(231,180,80,.45)}
+@keyframes slideIn{from{transform:translateX(-30px) scale(.3);opacity:0}to{transform:none;opacity:1}}
+.empty{color:var(--mut);font-size:14px;padding:8px 0}
+
+/* ---------- statisztika ---------- */
+.split{display:grid;grid-template-columns:120px 1fr;gap:16px;align-items:center}
+.donut circle{fill:none;stroke-width:14;transition:stroke-dasharray 1s var(--ease),stroke-dashoffset 1s var(--ease)}
+.legend div{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed var(--line);font-size:15px}
+.legend div:last-child{border:0}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.big{font-size:22px;font-weight:700}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.kpi{background:rgba(0,0,0,.25);border-radius:12px;padding:10px;text-align:center}
+.kpi b{display:block;font-size:20px;white-space:nowrap}
+#kStreak{font-size:16px;line-height:25px}.kpi span{font-size:11px;color:var(--mut)}
+.timeline{display:flex;gap:3px;align-items:flex-end;height:46px;margin-top:6px}
+.timeline i{flex:1;border-radius:4px;transform-origin:bottom;animation:grow .5s var(--ease) both}
+@keyframes grow{from{transform:scaleY(0)}}
+.heat{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.heat div{border-radius:9px;padding:8px 0;text-align:center;font-size:13px;font-weight:700;position:relative;transition:background .6s}
+.heat div small{display:block;font-size:10px;font-weight:400;opacity:.8}
+.heat .z0{grid-column:span 6}
+.prob{width:100%;border-collapse:collapse;font-size:15px}.prob td{padding:7px 0;border-bottom:1px dashed var(--line)}
+.prob td:last-child{text-align:right;font-weight:700}.prob tr:last-child td{border:0}
+.verdict{margin-top:12px;padding:12px;border-radius:12px;background:rgba(231,180,80,.08);border:1px solid rgba(231,180,80,.25);font-size:14px;line-height:1.45}
+
+/* ---------- OCR ---------- */
+.drop{display:flex;flex-direction:column;align-items:center;gap:6px;border:2px dashed rgba(231,180,80,.4);border-radius:var(--r);padding:26px 12px;text-align:center;cursor:pointer;transition:background .2s}
+.drop:active{background:rgba(231,180,80,.08)}.drop input{display:none}
+.drop .ic{font-size:34px;animation:bob 2.4s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-5px)}}
+canvas{display:block;width:100%;border-radius:10px}
+.sliders{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:13px;color:var(--mut);margin:10px 0}
+input[type=range]{width:100%;accent-color:var(--gold)}
+.live{color:#ff5c60;font-size:12px;letter-spacing:.1em;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+.btn:disabled{opacity:.4}
+.status{font-size:14px;color:var(--mut);margin:10px 0;min-height:20px}
+.bar{height:4px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .3s}
+
+/* ---------- info ---------- */
+.info p{line-height:1.55;font-size:15px;margin:0 0 10px}
+.info b{color:var(--gold)}
+
+/* ---------- alsó navigáció ---------- */
+nav{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom));width:min(528px,calc(100% - 32px));
+  display:grid;grid-template-columns:repeat(4,1fr);background:rgba(18,22,33,.82);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:22px;padding:6px;z-index:10}
+nav button{border:0;background:none;padding:8px 0 6px;border-radius:16px;font-size:11px;color:var(--mut);display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s,background .3s}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--gold);background:rgba(231,180,80,.12)}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-140%);background:#1b2030;border:1px solid var(--line);padding:10px 16px;border-radius:99px;font-size:14px;z-index:20;transition:transform .45s var(--ease);box-shadow:0 10px 30px rgba(0,0,0,.5);white-space:nowrap}
+.toast.show{transform:translate(-50%,0)}
+
+@media (max-width:380px){.hero{grid-template-columns:120px 1fr}.wheelWrap{width:120px;height:120px}.lastNum{font-size:60px}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>●</b> Pörgés&nbsp;Napló</div>
+  <div class="count" id="count">0 pörgetés</div>
+</header>
+
+<section class="hero">
+  <div class="wheelWrap"><div class="pointer"></div><svg id="wheel" viewBox="-100 -100 200 200" aria-hidden="true"></svg></div>
+  <div class="last">
+    <div class="lastLbl">Utolsó szám</div>
+    <div class="lastNum" id="lastNum">–</div>
+    <div class="tags" id="lastTags"></div>
+  </div>
+</section>
+
+<!-- BEVITEL -->
+<div class="view on" id="v-input">
+  <div class="card">
+    <h2>Előzmények <span class="mut" style="text-transform:none;letter-spacing:0">legújabb balra</span></h2>
+    <div class="strip" id="strip"></div>
+  </div>
+  <div class="card">
+    <h2>Kipörgetett szám</h2>
+    <div class="pad" id="pad"></div>
+    <div class="actions"><button class="btn" id="undo">↶ Visszavonás</button><button class="btn ghost" id="clear">Előzmények törlése</button></div>
+    <div class="multi"><input id="multi" inputmode="numeric" placeholder="Több szám: 36 11 29…" autocomplete="off"><button class="btn gold" id="multiAdd">Hozzáad</button></div>
+  </div>
+</div>
+
+<!-- STATISZTIKA -->
+<div class="view" id="v-stats">
+  <div class="card">
+    <h2>1-18 vs 19-36</h2>
+    <div class="split">
+      <svg class="donut" viewBox="0 0 120 120" width="120" height="120">
+        <circle cx="60" cy="60" r="46" stroke="rgba(255,255,255,.07)"/>
+        <circle id="dLo" cx="60" cy="60" r="46" stroke="var(--lo)" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="0 999"/>
+        <circle id="dHi" cx="60" cy="60" r="46" stroke="var(--hi)" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="0 999"/>
+        <circle id="dZ" cx="60" cy="60" r="46" stroke="var(--grn)" transform="rotate(-90 60 60)" stroke-dasharray="0 999"/>
+        <text x="60" y="58" text-anchor="middle" fill="#eef1f7" font-size="22" font-weight="700" id="dN">0</text>
+        <text x="60" y="76" text-anchor="middle" fill="#8a93a6" font-size="10">pörgetés</text>
+      </svg>
+      <div class="legend">
+        <div><span><i class="dot" style="background:var(--lo)"></i>1-18</span><span class="big" id="sLo">0</span></div>
+        <div><span><i class="dot" style="background:var(--hi)"></i>19-36</span><span class="big" id="sHi">0</span></div>
+        <div><span><i class="dot" style="background:var(--grn)"></i>0</span><span class="big" id="sZ">0</span></div>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b id="kStreak">–</b><span>aktuális sorozat</span></div>
+      <div class="kpi"><b id="kBest">0</b><span>leghosszabb</span></div>
+      <div class="kpi"><b id="kRep">–</b><span>oldal ismétlődött</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Utolsó 30 <span class="mut" style="text-transform:none;letter-spacing:0">▲ 19-36 · ▼ 1-18</span></h2>
+    <div class="timeline" id="timeline"></div>
+  </div>
+  <div class="card">
+    <h2>Gyakorisági hőtérkép</h2>
+    <div class="heat" id="heat"></div>
+  </div>
+  <div class="card">
+    <h2>Következő pörgetés – valós esélyek</h2>
+    <table class="prob">
+      <tr><td>1-18</td><td>48,65%</td></tr>
+      <tr><td>19-36</td><td>48,65%</td></tr>
+      <tr><td>0</td><td>2,70%</td></tr>
+      <tr><td>Bármely konkrét szám</td><td>2,70%</td></tr>
+      <tr><td>Várható érték / 100 Ft tét</td><td>−2,70 Ft</td></tr>
+    </table>
+    <div class="verdict" id="verdict"></div>
+  </div>
+</div>
+
+<!-- KÉP -->
+<div class="view" id="v-ocr">
+  <div class="card" id="monCard">
+    <h2>Képernyő figyelése <span class="live" id="liveDot" hidden>● ÉLŐ</span></h2>
+    <p class="mut" style="font-size:14px;margin:0 0 12px;line-height:1.45">Gépen (Chrome / Edge): oszd meg a játék fülét vagy ablakát, és jelöld ki egérrel a számsort. A program figyeli, és az új számokat magától rögzíti. Csak a képet látja, az oldalhoz nem nyúl.</p>
+    <div class="actions"><button class="btn gold" id="monStart">▶ Figyelés indítása</button><button class="btn" id="monStop" disabled>■ Leállítás</button></div>
+    <div class="status" id="monst"></div>
+  </div>
+  <div class="card">
+    <h2>Képernyőkép beolvasása</h2>
+    <label class="drop"><input type="file" id="shot" accept="image/*"><span class="ic">📷</span><b>Válassz képernyőképet</b><span class="mut" style="font-size:13px">vagy gépen illeszd be: Ctrl+V</span></label>
+  </div>
+  <div class="card" id="ocrbox" hidden>
+    <h2>Számsor helye</h2>
+    <p class="mut" style="font-size:13px;margin:0 0 8px">Húzd ki egérrel / ujjal a keretet a számsor köré (legújabb szám balra). Telefonos képnél a csúszkák is jók.</p>
+    <canvas id="prev" style="background:#000;touch-action:none;cursor:crosshair"></canvas>
+    <div class="sliders"><span>Sáv helye</span><input type="range" id="top" min="0" max="40" step="0.1" value="7"><span>Magasság</span><input type="range" id="hgt" min="1" max="8" step="0.1" value="2.1"></div>
+    <canvas id="crop" style="background:#fff"></canvas>
+    <div class="status" id="ocrst"></div>
+    <div class="bar"><i id="ocrbar"></i></div>
+    <input class="field" id="ocrtxt" placeholder="pl. 36 11 36 29 24" style="width:100%;margin-top:10px">
+    <div class="actions"><button class="btn" id="read">↻ Újraolvasás</button><button class="btn gold" id="ocradd">Hozzáadás</button></div>
+  </div>
+</div>
+
+<!-- INFO -->
+<div class="view" id="v-info">
+  <div class="card info">
+    <h2>Hogyan működik a rulett?</h2>
+    <p>Minden pörgetés <b>független</b>: a kerék nem emlékszik az előzőre. Akárhány 1-18 jött egymás után, a következőnél is <b>18/37 = 48,65%</b> az 1-18 és ugyanennyi a 19-36 esélye, a nulláé 2,70%.</p>
+    <p>A „most már a másiknak kell jönnie” érzés a <b>szerencsejátékos tévedése</b>. A sorozatok természetesek: 30 pörgetésben egy 5-ös sorozat teljesen átlagos.</p>
+    <p>A nulla miatt a ház előnye <b>2,7%</b>: minden 100 Ft feltett pénz átlagosan 2,70 Ft veszteséget hoz, bármilyen rendszerrel (duplázás, sorozatfigyelés). Ez az oldal ezért nem talál ki tippet – azt mutatja, amit az adatok ténylegesen mondanak.</p>
+    <p class="mut">Ha a játék kezd túl sokat elvenni, a magyarországi Országos Addiktológiai Telefonszolgálat ingyenesen segít.</p>
+  </div>
+</div>
+
+<nav id="nav">
+  <button data-v="input" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Bevitel</button>
+  <button data-v="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Statisztika</button>
+  <button data-v="ocr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Kép</button>
+  <button data-v="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>Infó</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const ORDER=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const cls=n=>n===0?'z':RED.has(n)?'r':'b';
+const side=n=>n===0?'0':n<=18?'L':'H';
+const NAME={L:'1-18',H:'19-36','0':'0'};
+const KEY='rt_hist';
+let h;try{h=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!Array.isArray(h))h=[36,11,36,29,24,35,23,6,27,5,34,7,30,6];
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(h))}catch(e){}};
+const buzz=ms=>{try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
+
+/* ---------- kerék ---------- */
+const SEG=360/ORDER.length;let wheelRot=0;
+(function buildWheel(){
+  const w=$('wheel'),R=96,r=64,ns='http://www.w3.org/2000/svg';let s='';
+  const pt=(a,rad)=>[Math.sin(a*Math.PI/180)*rad,-Math.cos(a*Math.PI/180)*rad];
+  ORDER.forEach((n,i)=>{const a0=i*SEG-SEG/2,a1=a0+SEG,[x0,y0]=pt(a0,R),[x1,y1]=pt(a1,R),[x2,y2]=pt(a1,r),[x3,y3]=pt(a0,r);
+    const col=n===0?'#1f9d55':RED.has(n)?'#d8343a':'#1d212b';
+    s+=`<path d="M${x0} ${y0}A${R} ${R} 0 0 1 ${x1} ${y1}L${x2} ${y2}A${r} ${r} 0 0 0 ${x3} ${y3}Z" fill="${col}" stroke="#0b0d12" stroke-width=".6"/>`;
+    const [tx,ty]=pt(i*SEG,82);s+=`<text x="${tx}" y="${ty}" transform="rotate(${i*SEG} ${tx} ${ty})" text-anchor="middle" dominant-baseline="central" font-size="8.5" font-weight="700" fill="#fff">${n}</text>`});
+  s+=`<circle r="${R}" fill="none" stroke="#e7b450" stroke-width="2.5"/><circle r="${r}" fill="#141824" stroke="#e7b450" stroke-opacity=".5"/>`;
+  for(let i=0;i<8;i++){const [x,y]=pt(i*45,50);s+=`<line x1="0" y1="0" x2="${x}" y2="${y}" stroke="#e7b450" stroke-opacity=".35" stroke-width="2"/>`}
+  s+=`<circle r="14" fill="#e7b450"/><circle r="6" fill="#141824"/>`;
+  w.innerHTML=s;
+})();
+function spinTo(n,animate){
+  const target=-ORDER.indexOf(n)*SEG,cur=((wheelRot%360)+360)%360;let delta=((target-cur)%360+360)%360;
+  wheelRot+=delta+(animate?720:0);
+  const w=$('wheel');if(!animate){w.style.transition='none';w.style.transform=`rotate(${wheelRot}deg)`;w.getBoundingClientRect();w.style.transition=''}
+  else w.style.transform=`rotate(${wheelRot}deg)`;
+}
+
+/* ---------- billentyűzet ---------- */
+[0,...Array.from({length:36},(_,i)=>i+1)].forEach(n=>{const b=document.createElement('button');b.className='k '+cls(n);b.textContent=n;
+  b.onclick=e=>{const r=b.getBoundingClientRect(),s=document.createElement('span');s.className='rip';const d=Math.max(r.width,r.height);
+    s.style.cssText=`width:${d}px;height:${d}px;left:${e.clientX-r.left-d/2}px;top:${e.clientY-r.top-d/2}px`;b.appendChild(s);setTimeout(()=>s.remove(),600);
+    add([n])};$('pad').appendChild(b)});
+
+function add(nums,msg){
+  if(!nums.length)return;h=nums.concat(h);save();buzz(15);render(nums.length);
+  toast(msg||`+ ${nums[0]} · ${NAME[side(nums[0])]}`);
+}
+$('undo').onclick=()=>{if(!h.length)return;const n=h.shift();save();render(0);toast(`Visszavonva: ${n}`)};
+$('clear').onclick=()=>{if(h.length&&confirm('Minden előzmény törlése?')){h=[];save();render(0);toast('Előzmények törölve')}};
+$('multiAdd').onclick=()=>{const seq=($('multi').value.match(/\d+/g)||[]).map(Number).filter(n=>n<=36);if(!seq.length)return;
+  add(seq,`${seq.length} szám hozzáadva`);$('multi').value=''};
+$('multi').onkeydown=e=>{if(e.key==='Enter')$('multiAdd').click()};
+
+/* ---------- navigáció, toast ---------- */
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));
+  try{localStorage.setItem('rt_tab',b.dataset.v)}catch(e){}window.scrollTo({top:0,behavior:'smooth'})});
+try{const t=localStorage.getItem('rt_tab');if(t)document.querySelector(`#nav [data-v="${t}"]`)?.click()}catch(e){}
+let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),1600)}
+
+/* ---------- számláló animáció ---------- */
+function tween(el,to,suffix=''){const from=parseFloat(el.dataset.v||0);el.dataset.v=to;const t0=performance.now();
+  (function f(t){const k=Math.min(1,(t-t0)/600),e=1-Math.pow(1-k,3);el.textContent=Math.round(from+(to-from)*e)+suffix;if(k<1)requestAnimationFrame(f)})(t0)}
+
+/* ---------- megjelenítés ---------- */
+function render(added){
+  const N=h.length,L=h.filter(n=>side(n)==='L').length,H=h.filter(n=>side(n)==='H').length,Z=N-L-H;
+  $('count').textContent=N+' pörgetés';
+  // utolsó szám + kerék
+  const ln=$('lastNum');
+  if(N){ln.textContent=h[0];ln.style.color=h[0]===0?'#5fdc96':RED.has(h[0])?'#ff5c60':'#fff';
+    const s=side(h[0]);$('lastTags').innerHTML=`<span class="tag ${s==='L'?'lo':s==='H'?'hi':'z'}">${NAME[s]}</span><span class="tag">${h[0]===0?'zöld':RED.has(h[0])?'piros':'fekete'}</span><span class="tag">${h[0]===0?'—':h[0]%2?'páratlan':'páros'}</span>`;
+    if(added){ln.classList.remove('pop');void ln.offsetWidth;ln.classList.add('pop')}
+    spinTo(h[0],!!added);
+  }else{ln.textContent='–';ln.style.color='';$('lastTags').innerHTML='<span class="tag">Még nincs adat</span>'}
+  // szalag
+  $('strip').innerHTML=N?h.map((n,i)=>`<div class="chip ${cls(n)}${i<added?' new':''}" style="${i<added?`animation-delay:${i*40}ms`:''}">${n}</div>`).join(''):'<div class="empty">Koppints egy számra lent.</div>';
+  $('strip').scrollLeft=0;
+  // fánkdiagram
+  const C=2*Math.PI*46,fl=N?L/N:0,fh=N?H/N:0,fz=N?Z/N:0;
+  $('dLo').setAttribute('stroke-dasharray',`${fl*C} ${C}`);
+  $('dHi').setAttribute('stroke-dasharray',`${fh*C} ${C}`);$('dHi').setAttribute('stroke-dashoffset',`${-fl*C}`);
+  $('dZ').setAttribute('stroke-dasharray',`${fz*C} ${C}`);$('dZ').setAttribute('stroke-dashoffset',`${-(fl+fh)*C}`);
+  tween($('dN'),N);tween($('sLo'),L);tween($('sHi'),H);tween($('sZ'),Z);
+  // sorozatok
+  let s=0;const cur=N?side(h[0]):null;while(s<N&&side(h[s])===cur)s++;
+  let best=0,run=0;for(let i=0;i<N;i++){run=i&&side(h[i])===side(h[i-1])?run+1:1;best=Math.max(best,run)}
+  let same=0,tot=0;for(let i=0;i<N-1;i++)if(h[i]&&h[i+1]){tot++;if(side(h[i])===side(h[i+1]))same++}
+  $('kStreak').textContent=cur?`${s}× ${NAME[cur]}`:'–';$('kBest').textContent=best;$('kRep').textContent=tot?Math.round(100*same/tot)+'%':'–';
+  // idővonal (legrégebbi balra)
+  $('timeline').innerHTML=h.slice(0,30).reverse().map((n,i)=>{const sd=side(n);
+    return `<i style="height:${sd==='0'?30:sd==='H'?100:55}%;background:${sd==='L'?'var(--lo)':sd==='H'?'var(--hi)':'var(--grn)'};animation-delay:${i*18}ms" title="${n}"></i>`}).join('');
+  // hőtérkép
+  const f=Array(37).fill(0);h.forEach(n=>f[n]++);const mx=Math.max(1,...f);
+  $('heat').innerHTML=f.map((c,n)=>{const a=.08+.72*(c/mx),base=n===0?'31,157,85':RED.has(n)?'229,56,59':'150,160,185';
+    return `<div class="${n===0?'z0':''}" style="background:rgba(${base},${a})">${n}<small>${c}×</small></div>`}).join('');
+  // értékelés
+  const p=18/37,z=N?(L-N*p)/Math.sqrt(N*p*(1-p)):0;
+  $('verdict').innerHTML=N<30?`Csak <b>${N}</b> pörgetés van rögzítve – ennyiből semmilyen torzítás nem mutatható ki. A következő pörgetésre a fenti esélyek érvényesek.`
+    :Math.abs(z)>=2?`Az 1-18 arány ${z.toFixed(2)} szórásnyira tér el a várttól. Ez is lehet véletlen; valós kerékhibát csak sok ezer pörgetés igazolhatna, az élő online kerekeket pedig rendszeresen ellenőrzik.`
+    :`Nincs kimutatható eltérés (z = ${z.toFixed(2)}). Az adatok a véletlennel összhangban vannak – nincs alapja tippnek.`;
+}
+render(0);
+
+// ---- Képernyőkép beolvasás (OCR) ----
+let img=null,worker=null,tokens=[],sel=null;
+try{sel=JSON.parse(localStorage.getItem('rt_rect'))}catch(e){}
+function loadFile(f){if(!f)return;stopMon();const u=URL.createObjectURL(f);const im=new Image();im.onload=()=>{img=im;$('ocrbox').hidden=false;drawPrev();read()};im.src=u}
+$('shot').onchange=e=>loadFile(e.target.files[0]);
+// Ctrl+V: kivágott képernyőkép beillesztése
+document.addEventListener('paste',e=>{const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));if(!it)return;
+  e.preventDefault();document.querySelector('#nav [data-v="ocr"]').click();loadFile(it.getAsFile());toast('Kép beillesztve')});
+$('top').oninput=$('hgt').oninput=()=>{sel=null;try{localStorage.removeItem('rt_rect')}catch(e){}drawPrev()};
+function band(){
+  if(sel)return{x:Math.round(img.width*sel.x),y:Math.round(img.height*sel.y),w:Math.max(8,Math.round(img.width*sel.w)),h:Math.max(4,Math.round(img.height*sel.h))};
+  const t=+$('top').value/100,hh=+$('hgt').value/100;return{x:0,w:img.width,y:Math.round(img.height*t),h:Math.max(4,Math.round(img.height*hh))}}
+// keret kijelölése húzással az előnézeten
+(function(){const c=$('prev');let st=null;
+  const pos=e=>{const r=c.getBoundingClientRect();return[Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))]};
+  c.onpointerdown=e=>{if(!img)return;c.setPointerCapture(e.pointerId);st=pos(e)};
+  c.onpointermove=e=>{if(!st)return;const q=pos(e);const H=c.height/img.height;
+    sel={x:Math.min(st[0],q[0]),w:Math.abs(q[0]-st[0]),y:Math.min(st[1],q[1])*H,h:Math.abs(q[1]-st[1])*H};drawPrev(true)};
+  c.onpointerup=()=>{if(!st)return;st=null;if(sel&&(sel.w<0.02||sel.h<0.003)){sel=null}
+    try{sel?localStorage.setItem('rt_rect',JSON.stringify(sel)):0}catch(e){}drawPrev();if(!mon)read();else monLast=null}})();
+function drawPrev(light){
+  const c=$('prev'),W=img.width,H=Math.round(img.height*(img.height>img.width*1.3?0.45:1));c.width=W;c.height=H;const x=c.getContext('2d');
+  x.drawImage(img,0,0,W,H,0,0,W,H);const b=band();x.strokeStyle='#e7b450';x.lineWidth=Math.max(3,W/200);x.strokeRect(b.x+1,b.y,b.w-2,b.h);
+  if(!light)binarize();
+}
+// Szövegpixelek: fehér, vagy piros szöveg sötét háttéren. A piros/arany hátterű cellákban csak a fehér számít.
+function binarize(){
+  const b=band(),W=b.w,S=Math.max(1,Math.round(90/b.h));
+  const t=document.createElement('canvas');t.width=W;t.height=b.h;const tx=t.getContext('2d');tx.drawImage(img,b.x,b.y,W,b.h,0,0,W,b.h);
+  const d=tx.getImageData(0,0,W,b.h),p=d.data;
+  const isRed=i=>p[i]>70&&p[i]>1.7*p[i+1]&&p[i]>1.7*p[i+2];
+  const isRedSoft=i=>p[i]>55&&p[i]>1.35*p[i+1]&&p[i]>1.35*p[i+2]; // élsimított széleket is
+  const colRed=new Float32Array(W);
+  for(let x=0;x<W;x++){let n=0;for(let y=0;y<b.h;y++)if(isRed((y*W+x)*4))n++;colRed[x]=n/b.h}
+  const out=tx.createImageData(W,b.h),o=out.data;
+  for(let y=0;y<b.h;y++)for(let x=0;x<W;x++){const i=(y*W+x)*4;
+    const mx=Math.max(p[i],p[i+1],p[i+2]),mn=Math.min(p[i],p[i+1],p[i+2]);
+    const white=mx>105&&mx-mn<55; // halvány/áttetsző fehér számok is
+    const redTxt=isRedSoft(i)&&colRed[x]<0.45;
+    const v=(white||redTxt)?0:255;o[i]=o[i+1]=o[i+2]=v;o[i+3]=255}
+  // cellaelválasztó függőleges vonalak törlése (szinte teljes magasságú oszlopok)
+  const cn=new Int32Array(W);for(let x=0;x<W;x++)for(let y=0;y<b.h;y++)if(!o[(y*W+x)*4])cn[x]++;
+  for(let x=0;x<W;x++)if(cn[x]>0.7*b.h&&(cn[x-4]||0)<0.5*b.h&&(cn[x+4]||0)<0.5*b.h)
+    for(let y=0;y<b.h;y++){const i=(y*W+x)*4;o[i]=o[i+1]=o[i+2]=255}
+  // vízszintes keretvonalak törlése
+  for(let y=0;y<b.h;y++){let n=0;for(let x=0;x<W;x++)if(!o[(y*W+x)*4])n++;
+    if(n>0.08*W){let run=0,lr=0;for(let x=0;x<W;x++){run=o[(y*W+x)*4]?0:run+1;lr=Math.max(lr,run)}
+      if(lr>0.06*W)for(let x=0;x<W;x++){const i=(y*W+x)*4;o[i]=o[i+1]=o[i+2]=255}}}
+  tx.putImageData(out,0,0);
+  // fő szövegsáv (sorprofil) és számok szétválasztása (oszlopprofil)
+  const blk=(x,y)=>!o[(y*W+x)*4],rc=new Int32Array(b.h);
+  for(let y=0;y<b.h;y++)for(let x=0;x<W;x++)if(blk(x,y))rc[y]++;
+  const rmax=Math.max(...rc);let y0=rc.indexOf(rmax),y1=y0;
+  while(y0>0&&rc[y0-1]>0.12*rmax)y0--;while(y1<b.h-1&&rc[y1+1]>0.12*rmax)y1++;
+  const th=y1-y0+1,col=x=>{for(let y=y0;y<=y1;y++)if(blk(x,y))return true;return false};
+  const runs=[];let st=-1;for(let x=0;x<=W;x++){const on=x<W&&col(x);if(on&&st<0)st=x;if(!on&&st>=0){runs.push([st,x]);st=-1}}
+  // töredékek (élsimítás miatt szétesett számjegy-darabok) hozzáolvasztása a szomszédhoz
+  let rs=runs.map(r=>[...r]);
+  for(let changed=true;changed;){changed=false;
+    for(let i=0;i<rs.length;i++){const w=rs[i][1]-rs[i][0];if(w>=th*0.3)continue;
+      const gl=i>0?rs[i][0]-rs[i-1][1]:1e9,gr=i<rs.length-1?rs[i+1][0]-rs[i][1]:1e9;
+      if(Math.min(gl,gr)>th*0.2)continue;
+      if(gl<=gr){rs[i-1][1]=rs[i][1];rs.splice(i,1)}else{rs[i+1][0]=rs[i][0];rs.splice(i,1)}changed=true;break}}
+  const ext=([a,z])=>{let t1=y1,b1=y0;for(let x=a;x<z;x++)for(let y=y0;y<=y1;y++)if(blk(x,y)){t1=Math.min(t1,y);b1=Math.max(b1,y)}return b1-t1+1};
+  const digs=rs.filter(r=>ext(r)>=th*0.5);
+  const mk=(a,z)=>{const pad=Math.round(th*0.5),sc=Math.max(1,48/th),c=document.createElement('canvas');
+    c.width=Math.round((z-a+2*pad)*sc);c.height=Math.round((th+2*pad)*sc);const cx=c.getContext('2d');
+    cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);cx.drawImage(t,a,y0,z-a,th,pad*sc,pad*sc,(z-a)*sc,th*sc);return c};
+  // számjegyek csoportosítása számokká (kis rés = ugyanaz a szám)
+  const grp=[];for(const r of digs){const L=grp[grp.length-1];if(L&&r[0]-L.d[L.d.length-1][1]<th*0.3)L.d.push(r);else grp.push({d:[r]})}
+  tokens=grp.map(g=>({n:g.d.length,img:mk(g.d[0][0],g.d[g.d.length-1][1]),digits:g.d.map(r=>mk(r[0],r[1]))}));
+  const c=$('crop');c.width=W*S;c.height=b.h*S;const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);
+  cx.imageSmoothingEnabled=true;cx.drawImage(t,0,0,c.width,c.height);
+}
+async function ensureWorker(){if(!window.Tesseract)throw new Error('A szövegfelismerő nem töltődött be (nincs internet?)');
+  if(!worker){worker=await Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'0123456789'})}}
+// a kijelölt sáv első `limit` számának kiolvasása; bizonytalan szám: '?'
+async function ocrNums(limit,progress){
+  await ensureWorker();
+  const ocr=async(c,psm)=>{await worker.setParameters({tessedit_pageseg_mode:psm});return ((await worker.recognize(c)).data.text.match(/\d+/g)||[]).join('')};
+  const list=tokens.slice(0,limit||tokens.length),nums=[];let k=0;
+  for(const tk of list){progress&&progress(++k,list.length);
+    // a számjegyek száma ismert (képből), így azt a felismerést fogadjuk el, amelyik ennyi jegyből áll
+    let v=null;for(const psm of ['7','8','13']){const r=await ocr(tk.img,psm);if(r.length===tk.n){v=r;break}}
+    if(v===null){v='';for(const d of tk.digits){const r=await ocr(d,'10');v+=r.length===1?r:'?'}}
+    nums.push(/^\d+$/.test(v)&&+v<=36?+v:'?'+v.replace(/\?/g,''))}
+  return nums;
+}
+async function read(){
+  $('ocrst').textContent='Kiolvasás folyamatban…';$('ocrbar').style.width='0';
+  try{
+    const nums=await ocrNums(0,(k,n)=>{$('ocrst').textContent=`Kiolvasás… ${k}/${n}`;$('ocrbar').style.width=(100*k/n)+'%'});
+    $('ocrtxt').value=nums.join(' ');
+    const bad=nums.filter(n=>typeof n!=='number').length;
+    $('ocrst').textContent=nums.length?`${nums.length} számot olvastam ki${bad?` (${bad} bizonytalan, „?”-lel jelölve – javítsd)`:''} – vesd össze a képpel, és javítsd, ha kell.`:'Nem találtam számot – húzd a keretet a számsor köré.';
+  }catch(err){$('ocrst').textContent='Hiba a kiolvasásnál: '+err.message}
+}
+$('read').onclick=read;
+// Csak az új számokat adja hozzá: megkeresi, hol fedi át a kép a már rögzített előzményeket.
+function merge(seq){
+  if(!h.length)return seq;
+  for(let k=0;k<seq.length;k++){const rest=seq.slice(k),m=Math.min(rest.length,h.length);
+    if(m>=Math.min(3,rest.length)&&rest.slice(0,m).every((n,i)=>n===h[i]))return seq.slice(0,k)}
+  return null;
+}
+$('ocradd').onclick=()=>{
+  if(/\?/.test($('ocrtxt').value)){$('ocrst').textContent='Előbb javítsd a „?”-lel jelölt számokat.';return}
+  const seq=($('ocrtxt').value.match(/\d+/g)||[]).map(Number).filter(n=>n<=36);if(!seq.length)return;
+  let nw=merge(seq);
+  if(nw===null){if(!confirm('A kép számsora nem kapcsolódik a mostani előzményekhez. Mind a '+seq.length+' számot hozzáadjam?'))return;nw=seq}
+  if(!nw.length){$('ocrst').textContent='Nincs új szám – ezek már mind benne vannak.';toast('Nincs új szám');return}
+  add(nw,nw.length+' új szám hozzáadva');$('ocrst').textContent=nw.length+' új szám hozzáadva: '+nw.join(', ');
+};
+
+
+// ---- Élő képernyő-figyelés (gépen) ----
+let mon=null,monLast=null,monBusy=false,monFirst=true,monPend=null;
+const vid=document.createElement('video');vid.muted=true;vid.playsInline=true;
+const frame=document.createElement('canvas');
+function sig(){ // kis felbontású ujjlenyomat a kijelölt sávról – ebből látszik, változott-e
+  const b=band(),c=document.createElement('canvas');c.width=96;c.height=8;const x=c.getContext('2d');x.drawImage(img,b.x,b.y,b.w,b.h,0,0,96,8);
+  const d=x.getImageData(0,0,96,8).data,o=new Uint8Array(768);for(let i=0;i<768;i++)o[i]=(d[i*4]+d[i*4+1]+d[i*4+2])/3;return o}
+const diff=(a,b)=>{if(!a||!b)return 255;let s=0;for(let i=0;i<a.length;i++)s+=Math.abs(a[i]-b[i]);return s/a.length};
+async function startMon(){
+  if(!navigator.mediaDevices?.getDisplayMedia){$('monst').textContent='Ez a böngésző nem támogatja a képernyő megosztását. Gépen Chrome-ot vagy Edge-et használj; telefonon a képernyőkép-beolvasás működik.';return}
+  try{mon=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:4},audio:false})}catch(e){$('monst').textContent='A megosztás megszakítva.';return}
+  vid.srcObject=mon;await vid.play();mon.getVideoTracks()[0].onended=stopMon;
+  monFirst=true;monLast=null;monPend=null;img=frame;
+  $('monStart').disabled=true;$('monStop').disabled=false;$('liveDot').hidden=false;$('ocrbox').hidden=false;
+  $('monst').textContent=sel?'Figyelés fut. Ha a keret nem a számsoron van, húzd át lent.':'Húzd ki a keretet lent a számsor köré – utána indul a figyelés.';
+  toast('Figyelés elindult');tick();
+}
+function stopMon(){if(!mon)return;mon.getTracks().forEach(t=>t.stop());mon=null;
+  $('monStart').disabled=false;$('monStop').disabled=true;$('liveDot').hidden=true;$('monst').textContent='Figyelés leállítva.'}
+async function tick(){
+  if(!mon)return;
+  if(!monBusy&&vid.videoWidth){
+    frame.width=vid.videoWidth;frame.height=vid.videoHeight;frame.getContext('2d').drawImage(vid,0,0);
+    if(document.querySelector('#v-ocr.on'))drawPrev(true);
+    if(sel){const sg=sig();
+      // csak akkor olvas, ha a sáv megváltozott, és két egymás utáni képkockán már nyugton van (animáció vége)
+      if(diff(sg,monLast)>6){if(monPend&&diff(sg,monPend)<3){monBusy=true;await monRead();monLast=sg;monPend=null;monBusy=false}else monPend=sg}
+    }
+  }
+  setTimeout(tick,1200);
+}
+async function monRead(){
+  try{binarize();
+    const nums=await ocrNums(monFirst?0:6);
+    // a bizonytalan számig tartó eleje is elég (élő videónál a tömörítés néha elmos egy-egy számot)
+    const ok=[];for(const n of nums){if(typeof n!=='number')break;ok.push(n)}
+    if(ok.length<Math.min(3,nums.length)){$('monst').textContent='Bizonytalan kiolvasás ('+nums.join(' ')+') – újrapróbálom.';monLast=null;return}
+    let nw=merge(ok);
+    if(nw===null){if(monFirst){nw=ok}else{$('monst').textContent='A kiolvasott sor ('+ok.join(' ')+') nem illeszkedik az előzményekhez – ellenőrizd a keretet.';return}}
+    if(monFirst&&nw===ok&&h.length)toast('Új sorozat kezdve a képernyőről');
+    monFirst=false;
+    if(nw.length){add(nw,nw.length===1?`Új szám: ${nw[0]} · ${NAME[side(nw[0])]}`:`${nw.length} új szám`)}
+    $('monst').textContent=`Figyelés fut · utolsó olvasás: ${nums.slice(0,6).join(' ')} · ${new Date().toLocaleTimeString('hu-HU')}`;
+  }catch(err){$('monst').textContent='Hiba: '+err.message}
+}
+$('monStart').onclick=startMon;$('monStop').onclick=stopMon;
+</script>
+</body>
+</html>
