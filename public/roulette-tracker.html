@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rulett Figyelő</title>
+<style>
+:root{--bg:#121212;--card:#1e1e1e;--fg:#eee;--mut:#999;--red:#c62828;--blk:#333;--grn:#2e7d32;--acc:#f9a825}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;padding:16px;max-width:720px;margin:auto}
+h1{font-size:20px;margin:0 0 12px}.card{background:var(--card);border-radius:10px;padding:12px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}.n{border:0;color:#fff;padding:10px 0;border-radius:6px;font-size:16px;font-weight:600}
+.r{background:var(--red)}.b{background:var(--blk)}.z{background:var(--grn);grid-column:span 6}
+.hist{display:flex;flex-wrap:wrap;gap:4px}.hist span{min-width:30px;text-align:center;padding:4px;border-radius:4px;font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row button{flex:1;padding:8px;border:0;border-radius:6px;background:#444;color:#fff}
+.bar{height:22px;display:flex;border-radius:4px;overflow:hidden;margin:6px 0}.bar div{display:flex;align-items:center;justify-content:center;font-size:12px}
+.warn{border-left:4px solid var(--acc)}small,.mut{color:var(--mut)}table{width:100%;border-collapse:collapse}td{padding:3px 0}
+</style>
+</head>
+<body>
+<h1>🎡 Rulett Figyelő – 1-18 / 19-36</h1>
+
+<div class="card"><b>Kipörgetett szám bevitele</b>
+<div class="grid" id="pad"></div>
+<div class="row" style="margin-top:8px"><button id="undo">↶ Visszavon</button><button id="clear">Törlés</button></div></div>
+
+<div class="card"><b>Előzmények</b> <small>(legújabb balra)</small><div class="hist" id="hist" style="margin-top:6px"></div></div>
+
+<div class="card"><b>Következő pörgetés – valós esélyek</b>
+<table id="pred"></table>
+<p class="mut" id="verdict"></p></div>
+
+<div class="card"><b>Statisztika</b><div id="stats"></div></div>
+
+<div class="card warn"><b>Fontos</b>
+<p>Minden pörgetés független: a golyó nem emlékszik az előzőekre. Akárhány „kicsi” jött egymás után,
+a következő pörgetésnél <b>mindig 18/37 = 48,65%</b> az 1-18 és ugyanennyi a 19-36 esélye, 1/37 a nulla.
+A „sorozat után most jön a másik” gondolat a <i>szerencsejátékos tévedése</i>. A ház előnye (2,7%) miatt hosszú távon
+minden rendszer veszít. A program ezért nem talál ki tippet – azt mutatja meg, amit az adatok ténylegesen mondanak.</p></div>
+
+<script>
+const RED=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+const cls=n=>n===0?'z':RED.has(n)?'r':'b';
+const KEY='rt_hist';
+let h;try{h=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!Array.isArray(h))h=[36,11,36,29,24,35,23,6,27,5,34,7,30,6]; // képernyőképről, legújabb elöl
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(h))}catch(e){}};
+const pad=document.getElementById('pad');
+[0,...Array.from({length:36},(_,i)=>i+1)].forEach(n=>{const b=document.createElement('button');b.className='n '+cls(n);b.textContent=n;b.onclick=()=>{h.unshift(n);save();render()};pad.appendChild(b)});
+document.getElementById('undo').onclick=()=>{h.shift();save();render()};
+document.getElementById('clear').onclick=()=>{if(confirm('Minden előzmény törlése?')){h=[];save();render()}};
+const side=n=>n===0?'0':n<=18?'L':'H';
+const pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'–';
+function render(){
+  document.getElementById('hist').innerHTML=h.map(n=>`<span class="${cls(n)}">${n}</span>`).join('');
+  const N=h.length,L=h.filter(n=>side(n)==='L').length,H=h.filter(n=>side(n)==='H').length,Z=N-L-H;
+  // aktuális sorozat
+  let s=0;const cur=h.length?side(h[0]):null;while(s<N&&side(h[s])===cur)s++;
+  const name={L:'1-18',H:'19-36','0':'0'};
+  // binomiális z-próba: eltér-e a 1-18 arány a várt 18/37-től
+  const p=18/37,zL=N?(L-N*p)/Math.sqrt(N*p*(1-p)):0;
+  // leghosszabb sorozat
+  let best=0,run=0;for(let i=0;i<N;i++){run=i&&side(h[i])===side(h[i-1])?run+1:1;best=Math.max(best,run)}
+  // váltás utáni statisztika
+  let same=0,tot=0;for(let i=0;i<N-1;i++){if(h[i]&&h[i+1]){tot++;if(side(h[i])===side(h[i+1]))same++}}
+  // gyakoriság
+  const f=Array(37).fill(0);h.forEach(n=>f[n]++);const hot=[...f.keys()].sort((a,b)=>f[b]-f[a]).filter(n=>f[n]).slice(0,6);
+  document.getElementById('pred').innerHTML=`
+   <tr><td>1-18</td><td style="text-align:right"><b>48,65%</b></td></tr>
+   <tr><td>19-36</td><td style="text-align:right"><b>48,65%</b></td></tr>
+   <tr><td>0</td><td style="text-align:right"><b>2,70%</b></td></tr>
+   <tr><td>Bármelyik konkrét szám</td><td style="text-align:right"><b>2,70%</b></td></tr>
+   <tr><td>Várható érték 1-18/19-36 téten (100 Ft)</td><td style="text-align:right"><b>−2,70 Ft</b></td></tr>`;
+  const sig=Math.abs(zL)>=2;
+  document.getElementById('verdict').innerHTML=N<30
+   ?`Csak ${N} pörgetés van rögzítve – ennyiből semmilyen torzítás nem mutatható ki.`
+   :sig?`Az 1-18 arány ${zL.toFixed(2)} szórásnyira tér el a várttól. Ez lehet véletlen is (sok kerék/szakasz vizsgálatakor gyakran előfordul); valós kerékhibát csak több ezer pörgetés igazolhatna, és élő online kerekeket rendszeresen ellenőriznek.`
+   :`Nincs kimutatható eltérés (z = ${zL.toFixed(2)}). Az adatok a véletlennel összhangban vannak – nincs alapja tippnek.`;
+  document.getElementById('stats').innerHTML=`
+   <div class="bar"><div style="width:${N?100*L/N:0}%;background:#1565c0">${L?'1-18':''}</div><div style="width:${N?100*Z/N:0}%;background:var(--grn)">${Z?'0':''}</div><div style="width:${N?100*H/N:0}%;background:#6a1b9a">${H?'19-36':''}</div></div>
+   <table>
+   <tr><td>Pörgetések</td><td>${N}</td></tr>
+   <tr><td>1-18</td><td>${L} (${pct(L,N)})</td></tr>
+   <tr><td>19-36</td><td>${H} (${pct(H,N)})</td></tr>
+   <tr><td>0</td><td>${Z} (${pct(Z,N)})</td></tr>
+   <tr><td>Aktuális sorozat</td><td>${cur?s+'× '+name[cur]:'–'} <small>(esélye attól még 48,65% marad)</small></td></tr>
+   <tr><td>Leghosszabb sorozat</td><td>${best}</td></tr>
+   <tr><td>Ugyanaz az oldal ismétlődött</td><td>${same}/${tot} (${pct(same,tot)}) <small>– várt ≈ 50%</small></td></tr>
+   <tr><td>Leggyakoribb számok</td><td>${hot.map(n=>n+'×'+f[n]).join(', ')||'–'}</td></tr>
+   </table>`;
+}
+render();
+</script>
+</body>
+</html>
